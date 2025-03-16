@@ -1,34 +1,54 @@
 import pandas as pd
 
-# Load the Excel file
-file_path = "P&L Review_ Working File_3rd Mar 2025.xlsx"
-sheet_name = "5806"
+def process_pl_review(file_path):
+    """
+    Reads an Excel file, dynamically adds YTD, Percentage of Variance, and CFO Commentary columns 
+    to all sheets, performs necessary calculations, and saves the updated file.
+    
+    Parameters:
+        file_path (str): The path to the input Excel file.
+    
+    Returns:
+        str: Path of the updated Excel file.
+    """
+    # Load the Excel file
+    xls = pd.ExcelFile(file_path)
 
-# Read the Excel sheet
-df = pd.read_excel(file_path, sheet_name=sheet_name)
+    # Create an output file name
+    output_file = "Updated_" + file_path.split("/")[-1]
 
-# Identify numeric (month) columns dynamically
-month_columns = df.select_dtypes(include=['number']).columns.tolist()
+    # Create an Excel writer object
+    with pd.ExcelWriter(output_file, engine="xlsxwriter") as writer:
+        for sheet_name in xls.sheet_names:
+            # Read the sheet
+            df = pd.read_excel(xls, sheet_name=sheet_name)
 
-if len(month_columns) < 2:
-    raise ValueError("Not enough month columns to compute YTD and Percentage of Variance")
+            # Identify numeric (month) columns dynamically
+            month_columns = df.select_dtypes(include=['number']).columns.tolist()
 
-# Compute YTD (Last Month - Second Last Month)
-df["YTD"] = df[month_columns[-1]] - df[month_columns[-2]]
+            if len(month_columns) < 2:
+                print(f"Skipping sheet '{sheet_name}' (Not enough month columns)")
+                continue  # Skip sheets without enough data
 
-# Compute Percentage of Variance as (YTD / Last Month) * 100
-df["Percentage of variance"] = (df["YTD"] / df[month_columns[-1]]) * 100
+            # Compute YTD (Last Month - Second Last Month)
+            df["YTD"] = df[month_columns[-1]] - df[month_columns[-2]]
 
-# Handle division by zero (avoid infinite values)
-df["Percentage of variance"].replace([float("inf"), -float("inf")], 0, inplace=True)
-df["Percentage of variance"].fillna(0, inplace=True)  # Replace NaN with 0
+            # Compute Percentage of Variance (YTD / Last Month) * 100
+            df["Percentage of variance"] = (df["YTD"] / df[month_columns[-1]]) * 100
 
-# Add an empty CFO Commentary column
-df["CFO Commentary"] = ""
+            # Handle division by zero & NaN cases
+            df["Percentage of variance"].replace([float("inf"), -float("inf")], 0, inplace=True)
+            df["Percentage of variance"].fillna(0, inplace=True)
 
-# Save back to Excel
-output_file = "Updated_P&L_Review.xlsx"
-with pd.ExcelWriter(output_file, engine="xlsxwriter") as writer:
-    df.to_excel(writer, sheet_name=sheet_name, index=False)
+            # Add an empty CFO Commentary column
+            df["CFO Commentary"] = ""
 
-print(f"Updated file saved as {output_file}")
+            # Save updated sheet
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+    print(f"Updated file saved as {output_file}")
+    return output_file  # Return the output file path
+
+# Example usage:
+# process_pl_review("P&L Review_ Working File_3rd Mar 2025.xlsx")
+
