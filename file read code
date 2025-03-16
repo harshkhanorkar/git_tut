@@ -3,7 +3,8 @@ import pandas as pd
 def process_pl_review(file_path):
     """
     Processes an Excel file by adding YTD, Percentage of Variance, and CFO Commentary columns.
-    Also, searches for '55100' and '55200' in the first column and returns their corresponding YTD values.
+    Saves the updated file, reopens it, and searches for '55100' and '55200' in the first column
+    to return their corresponding YTD values.
 
     Parameters:
         file_path (str): The path to the input Excel file.
@@ -12,59 +13,55 @@ def process_pl_review(file_path):
         dict: A dictionary containing the full content of the cell where '55100' and '55200' are found
               and their corresponding YTD values.
     """
-    # Load the Excel file
+    # Load the Excel file and detect the first (only) sheet
     xls = pd.ExcelFile(file_path)
+    sheet_name = xls.sheet_names[0]  # Get the first sheet name
+    df = pd.read_excel(xls, sheet_name=sheet_name)
 
-    # Create an output file name
+    # Identify numeric (month) columns dynamically
+    month_columns = df.select_dtypes(include=['number']).columns.tolist()
+
+    if len(month_columns) < 2:
+        raise ValueError("Not enough month columns to compute YTD and Percentage of Variance")
+
+    # Compute YTD (Last Month - Second Last Month)
+    df["YTD"] = df[month_columns[-1]] - df[month_columns[-2]]
+
+    # Compute Percentage of Variance (YTD / Last Month) * 100
+    df["Percentage of variance"] = (df["YTD"] / df[month_columns[-1]]) * 100
+
+    # Handle division by zero & NaN cases
+    df["Percentage of variance"].replace([float("inf"), -float("inf")], 0, inplace=True)
+    df["Percentage of variance"].fillna(0, inplace=True)
+
+    # Add an empty CFO Commentary column
+    df["CFO Commentary"] = ""
+
+    # Save back to Excel
     output_file = "Updated_" + file_path.split("/")[-1]
-
-    # Dictionary to store results
-    ytd_values = {}
-
-    # Create an Excel writer object
     with pd.ExcelWriter(output_file, engine="xlsxwriter") as writer:
-        for sheet_name in xls.sheet_names:
-            # Read the sheet
-            df = pd.read_excel(xls, sheet_name=sheet_name)
-
-            # Identify numeric (month) columns dynamically
-            month_columns = df.select_dtypes(include=['number']).columns.tolist()
-
-            if len(month_columns) < 2:
-                print(f"Skipping sheet '{sheet_name}' (Not enough month columns)")
-                continue  # Skip sheets without enough data
-
-            # Compute YTD (Last Month - Second Last Month)
-            df["YTD"] = df[month_columns[-1]] - df[month_columns[-2]]
-
-            # Compute Percentage of Variance (YTD / Last Month) * 100
-            df["Percentage of variance"] = (df["YTD"] / df[month_columns[-1]]) * 100
-
-            # Handle division by zero & NaN cases
-            df["Percentage of variance"].replace([float("inf"), -float("inf")], 0, inplace=True)
-            df["Percentage of variance"].fillna(0, inplace=True)
-
-            # Add an empty CFO Commentary column
-            df["CFO Commentary"] = ""
-
-            # Save updated sheet
-            df.to_excel(writer, sheet_name=sheet_name, index=False)
-
-            # Search for '55100' and '55200' in the first column and get their YTD values
-            first_column_name = df.columns[0]  # Get the first column name dynamically
-            for search_value in ["55100", "55200"]:
-                matched_rows = df[df[first_column_name].astype(str) == search_value]
-
-                for _, row in matched_rows.iterrows():
-                    full_cell_content = row[first_column_name]  # Full content of the matching cell
-                    ytd_value = row["YTD"]  # Corresponding YTD value
-                    ytd_values[f"{full_cell_content}"] = f"{ytd_value}"
+        df.to_excel(writer, index=False)
 
     print(f"Updated file saved as {output_file}")
+
+    # Reopen the saved file to search for '55100' and '55200'
+    df_updated = pd.read_excel(output_file)  # Load updated file
+    ytd_values = {}
+    first_column_name = df_updated.columns[0]  # Get the first column name dynamically
+
+    for search_value in ["55100", "55200"]:
+        matched_rows = df_updated[df_updated[first_column_name].astype(str) == search_value]
+
+        for _, row in matched_rows.iterrows():
+            full_cell_content = row[first_column_name]  # Full content of the matching cell
+            ytd_value = row["YTD"]  # Corresponding YTD value
+            ytd_values[f"{full_cell_content}"] = f"{ytd_value}"
+
     return ytd_values  # Return the dictionary of results
 
 # Example usage:
 # ytd_results = process_pl_review("P&L Review_ Working File_3rd Mar 2025.xlsx")
 # print(ytd_results)
+
 
 
